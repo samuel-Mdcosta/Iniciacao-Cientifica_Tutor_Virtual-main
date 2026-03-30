@@ -1,0 +1,19 @@
+# Core e Utilitários
+python-dotenv
+argparse
+
+# Banco de Dados
+pymongo
+
+# IA e LLMs
+google-genai
+nomic
+
+# Processamento de PDF
+pymupdf
+pdfminer.six
+
+# API Web
+flask
+flask-cors
+fastapi
