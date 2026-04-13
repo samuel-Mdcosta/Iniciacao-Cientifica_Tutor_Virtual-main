@@ -41,6 +41,7 @@ class VectorStoreMongo:
             
             self.collection_access.insert_many(documentos)
 
+
     def search_vector(self, query_vector, limit=8):
         pipeline = [
             {
@@ -59,5 +60,5 @@ class VectorStoreMongo:
             doc.get("chunk", "")
             for doc in resultados
             if doc.get("score", 0) >= 0.75
-        ]
+            ]
         return textos_encontrados
