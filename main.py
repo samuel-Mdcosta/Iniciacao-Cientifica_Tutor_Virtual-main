@@ -1,13 +1,10 @@
-from contextlib import asynccontextmanager
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 from App.Backend.config.instructions import Instructions
 import os
 import json
-from pymongo import MongoClient
-from pymongo.server_api import ServerApi
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from dotenv import load_dotenv
 from App.Backend.engine.ragGenerate import RagGenerate
 
@@ -35,33 +32,7 @@ class Menu():
 
 sistema_tutor = Menu()
 
-class MongoDb:
-    def connect(self):
-        addr = os.getenv("MONGO_ADDRESS")
-        db_name = os.getenv("MONGO_DB")
-        coll_name = os.getenv("MONGO_COLLECTION")
-        self.mongo_client = MongoClient(addr, server_api=ServerApi('1'))
-        self.db_access = self.mongo_client[db_name]
-        self.collection_access = self.db_access[coll_name]
-
-    def disconnect(self):
-        if self.mongo_client:
-            self.mongo_client.close()
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    mongo_db = MongoDb()
-    mongo_db.connect()
-    app.state.db = mongo_db
-    try:
-        yield
-    finally:
-        mongo_db.disconnect()
-
-def get_collection(request: Request):
-    return request.app.state.db.collection_access
-
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 
 
 @app.post("/quizz")

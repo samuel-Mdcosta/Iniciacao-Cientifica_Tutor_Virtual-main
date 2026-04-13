@@ -4,18 +4,26 @@ from dotenv import load_dotenv
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rag.chunkGenerate import ChunkGenerate
 from embedding.embedGenerate import EmbedGenerate
 
 load_dotenv()
 
+_mongo_client = None
+
+def _get_mongo_client() -> MongoClient:
+    global _mongo_client
+    if _mongo_client is None:
+        _mongo_client = MongoClient(os.getenv("MONGO_ADDRESS"), server_api=ServerApi('1'))
+    return _mongo_client
+
 class VectorStoreMongo:
     def __init__(self):
-        self.mongo_client = MongoClient(os.getenv("MONGO_ADDRESS"), server_api=ServerApi('1'))
-        self.db_access = self.mongo_client[os.getenv("MONGO_DB")]
+        client = _get_mongo_client()
+        self.db_access = client[os.getenv("MONGO_DB")]
         self.collection_access = self.db_access[os.getenv("MONGO_COLLECTION")]
-        
+
         self.embedding = EmbedGenerate()
         self.chunking = ChunkGenerate()
 
