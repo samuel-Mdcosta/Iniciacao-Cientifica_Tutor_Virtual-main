@@ -49,10 +49,3 @@ class VectorStoreMongo:
         resultados = list(self.collection_access.aggregate(pipeline))
         textos_encontrados = [doc.get("chunk", "") for doc in resultados]
         return textos_encontrados
-    
-
-A = VectorStoreMongo()
-
-test = A.insert_several()
-
-print("Dados inseridos!!")
