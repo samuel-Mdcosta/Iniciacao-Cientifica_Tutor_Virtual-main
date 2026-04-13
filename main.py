@@ -16,16 +16,12 @@ class RequisicaoQuizz(BaseModel):
 class RequisicaoLlm(BaseModel):
     texto: str
 
+MODEL = "gemma-3-27b-it"
+GENERATE_CONFIG = types.GenerateContentConfig(temperature=0.1, max_output_tokens=2048)
+
 class Menu():
     def __init__(self):
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        self.chat = self.client.chats.create(
-            model="gemma-3-27b-it", 
-            config= types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=2048,
-            )
-        )
         self.instructions = Instructions()
         self.recovery = RagGenerate()
         self.collection_name = "Chunk_Dinamic_NoOverlap"
@@ -53,7 +49,9 @@ async def perguntas(req: RequisicaoQuizz):
     Tema solicitado: {req.texto}
     """
     
-    json_response = sistema_tutor.chat.send_message(full_prompt)
+    json_response = sistema_tutor.client.models.generate_content(
+        model=MODEL, contents=full_prompt, config=GENERATE_CONFIG
+    )
     texto_nformatado = json_response.text
     texto_formatado = texto_nformatado.replace("```json", "").replace("```", "").strip()
 
@@ -85,7 +83,9 @@ async def llm_response(req: RequisicaoLlm):
         Pergunta do aluno: {req.texto}
         """
         
-    response = sistema_tutor.chat.send_message(full_prompt)
+    response = sistema_tutor.client.models.generate_content(
+        model=MODEL, contents=full_prompt, config=GENERATE_CONFIG
+    )
 
     return {
         "pergunta": req.texto, 
