@@ -55,5 +55,9 @@ class VectorStoreMongo:
             {"$project": {"_id": 0, "chunk": 1, "score": {"$meta": "vectorSearchScore"}}}
         ]
         resultados = list(self.collection_access.aggregate(pipeline))
-        textos_encontrados = [doc.get("chunk", "") for doc in resultados]
+        textos_encontrados = [
+            doc.get("chunk", "")
+            for doc in resultados
+            if doc.get("score", 0) >= 0.75
+        ]
         return textos_encontrados
