@@ -30,6 +30,7 @@ class Instructions():
                                             "d": "Alternativa D",
                                             "e": "Alternativa E"
                                             }
+                                            }
                                             ]"""
         }
 
