@@ -38,6 +38,6 @@ class EmbedGenerate:
         output = embed.text(
             texts=[query],
             model='nomic-embed-text-v1.5',
-            task_type='search_document'
+            task_type='search_query'
         )['embeddings']
         return output
