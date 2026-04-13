@@ -43,9 +43,7 @@ async def perguntas(req: RequisicaoQuizz):
             for doc in doc_list:
                 context_text += f"{doc}\n\n"
 
-    full_prompt = f"""{instrucao_quiz}
-    Responda com base nas seguintes informações:
-    {context_text} 
+    full_prompt = f"""{instrucao_quiz.format(CONTEXT=context_text)}
     Tema solicitado: {req.texto}
     """
     
@@ -75,11 +73,8 @@ async def llm_response(req: RequisicaoLlm):
             for doc in doc_list:
                 context_text += f"{doc}\n\n"
 
-    full_prompt = f"""{response_prompt}
-        
-        Responda EXCLUSIVAMENTE com base nas seguintes informações do material didático:
-        {context_text} 
-        
+    full_prompt = f"""{response_prompt.format(CONTEXT=context_text)}
+
         Pergunta do aluno: {req.texto}
         """
         
