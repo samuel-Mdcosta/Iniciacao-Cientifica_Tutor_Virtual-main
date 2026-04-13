@@ -47,7 +47,7 @@ class VectorStoreMongo:
                 "$vectorSearch": {
                     "queryVector": query_vector,
                     "path": "vector",
-                    "numCandidates": 15,
+                    "numCandidates": 150,
                     "limit": limit,
                     "index": "vector-search-index"
                 }
