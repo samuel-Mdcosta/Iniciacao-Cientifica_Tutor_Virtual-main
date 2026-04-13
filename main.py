@@ -77,7 +77,6 @@ async def perguntas(req: RequisicaoQuizz):
                 context_text += f"{doc}\n\n"
 
     full_prompt = f"""{instrucao_quiz}
-    {instrucao_quiz}
     Responda com base nas seguintes informações:
     {context_text} 
     Tema solicitado: {req.texto}
