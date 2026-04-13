@@ -4,19 +4,20 @@ from dotenv import load_dotenv
 
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from rag.chunkGenerate import ChunkGenerate
 
 load_dotenv()
 
+_nomic_key = os.getenv("NOMIC_API_KEY")
+if _nomic_key:
+    nomic.login(token=_nomic_key)
+else:
+    raise ValueError("A chave NOMIC_API_KEY não foi encontrada no arquivo .env!")
+
 class EmbedGenerate:
     def __init__(self):
         self.chunks = ChunkGenerate()
-        nomic_key = os.getenv("NOMIC_API_KEY")
-        if nomic_key:
-            nomic.login(token=nomic_key)
-        else:
-            raise ValueError("A chave NOMIC_API_KEY não foi encontrada no arquivo .env!")
     
     def embed_text(self):
         dict_chunk = self.chunks.create_static_chunk()
