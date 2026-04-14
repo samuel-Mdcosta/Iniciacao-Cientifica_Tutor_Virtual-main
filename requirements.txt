@@ -17,3 +17,4 @@ pdfminer.six
 flask
 flask-cors
 fastapi
+uvicorn
