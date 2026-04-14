@@ -182,7 +182,7 @@ Envia uma pergunta ao tutor e recebe uma resposta fundamentada nos materiais did
 
 ### `POST /quizz`
 
-Gera uma lista de questões de múltipla escolha (5 alternativas: a, b, c, d, e) sobre um tema, com base no conteúdo dos materiais. A alternativa correta é distribuída aleatoriamente entre as letras a cada questão.
+Gera uma lista de questões de múltipla escolha (5 alternativas) sobre um tema, com base no conteúdo dos materiais.
 
 **Request:**
 ```json

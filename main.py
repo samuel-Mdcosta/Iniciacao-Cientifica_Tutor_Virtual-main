@@ -82,8 +82,16 @@ async def llm_response(req: RequisicaoLlm):
         model=MODEL, contents=full_prompt, config=GENERATE_CONFIG
     )
 
+    texto_nformatado = response.text
+    texto_formatado = texto_nformatado.replace("```json", "").replace("```", "").strip()
+
+    try:
+        resposta_estruturada = json.loads(texto_formatado)
+    except json.JSONDecodeError:
+        resposta_estruturada = {"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
+
     return {
-        "pergunta": req.texto, 
-        "resposta_tutor": response.text,
+        "pergunta": req.texto,
+        "resposta_tutor": resposta_estruturada,
         "documentos_utilizados": relevant_docs
     }
