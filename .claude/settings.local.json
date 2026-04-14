@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls .env.example)",
+      "Bash(ls App/Backend/rag/test.py)"
+    ]
+  }
+}
