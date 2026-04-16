@@ -39,9 +39,8 @@ async def perguntas(req: RequisicaoQuizz):
     
     context_text = ""
     if 'documents' in relevant_docs and relevant_docs['documents']:
-        for doc_list in relevant_docs['documents']:
-            for doc in doc_list:
-                context_text += f"{doc}\n\n"
+        for doc in relevant_docs['documents']:
+            context_text += f"{doc['chunk']}\n\n"
 
     full_prompt = f"""{instrucao_quiz.format(CONTEXT=context_text)}
     Tema solicitado: {req.texto}
@@ -69,9 +68,8 @@ async def llm_response(req: RequisicaoLlm):
     relevant_docs = sistema_tutor.recovery.compair_vector(req.texto)
     context_text = ""
     if 'documents' in relevant_docs and relevant_docs['documents']:
-        for doc_list in relevant_docs['documents']:
-            for doc in doc_list:
-                context_text += f"{doc}\n\n"
+        for doc in relevant_docs['documents']:
+            context_text += f"{doc['chunk']}\n\n"
 
     full_prompt = f"""{response_prompt.format(CONTEXT=context_text)}
 

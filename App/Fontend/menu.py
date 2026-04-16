@@ -22,9 +22,8 @@ class Menu():
 
         context_text = ""
         if 'documents' in relevant_docs and relevant_docs['documents']:
-            for doc_list in relevant_docs['documents']:
-                for doc in doc_list:
-                    context_text += f"{doc}\n\n"
+            for doc in relevant_docs['documents']:
+                context_text += f"{doc['chunk']}\n\n"
 
         full_prompt = f"""
             {self.instructions.get_instructions("01")}

@@ -15,5 +15,5 @@ class RagGenerate():
         query_vector = query[0]
         textos_similares = self.vector_store.search_vector(query_vector)
         
-        return {"documents": [textos_similares]}
+        return {"documents": textos_similares}
     

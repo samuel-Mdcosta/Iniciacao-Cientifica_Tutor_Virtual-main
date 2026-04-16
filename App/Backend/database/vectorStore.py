@@ -53,11 +53,11 @@ class VectorStoreMongo:
                     "index": "vector-search-index"
                 }
             },
-            {"$project": {"_id": 0, "chunk": 1, "score": {"$meta": "vectorSearchScore"}}}
+            {"$project": {"_id": 0, "chunk": 1, "file_name": 1, "score": {"$meta": "vectorSearchScore"}}}
         ]
         resultados = list(self.collection_access.aggregate(pipeline))
         textos_encontrados = [
-            doc.get("chunk", "")
+            {"chunk": doc.get("chunk", ""), "file_name": doc.get("file_name", "")}
             for doc in resultados
             if doc.get("score", 0) >= 0.75
             ]
