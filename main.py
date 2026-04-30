@@ -40,7 +40,7 @@ async def perguntas(req: RequisicaoQuizz):
     context_text = ""
     if 'documents' in relevant_docs and relevant_docs['documents']:
         for doc in relevant_docs['documents']:
-            context_text += f"{doc['chunk']}\n\n"
+            context_text += f"[Fonte: {doc['file_name']}]\n{doc['chunk']}\n\n"
 
     full_prompt = f"""{instrucao_quiz.format(CONTEXT=context_text)}
     Tema solicitado: {req.texto}
@@ -69,7 +69,7 @@ async def llm_response(req: RequisicaoLlm):
     context_text = ""
     if 'documents' in relevant_docs and relevant_docs['documents']:
         for doc in relevant_docs['documents']:
-            context_text += f"{doc['chunk']}\n\n"
+            context_text += f"[Fonte: {doc['file_name']}]\n{doc['chunk']}\n\n"
 
     full_prompt = f"""{response_prompt.format(CONTEXT=context_text)}
 
