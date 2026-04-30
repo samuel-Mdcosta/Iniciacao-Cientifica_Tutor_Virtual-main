@@ -1,0 +1,87 @@
+name: Claude PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  review:
+    name: Code review automático com Claude
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout do código do PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Executa Claude Code Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          model: claude-sonnet-4-6
+          timeout_minutes: "10"
+          direct_prompt: |
+            Você é um engenheiro de software sênior fazendo code review do PR atual.
+            O projeto é um Tutor Virtual de Neurociência (Python + FastAPI + MongoDB + Gemini + Nomic) com arquitetura RAG.
+
+            Analise APENAS o diff deste PR (não revise o repositório inteiro). Para cada problema encontrado:
+            1. Cite o arquivo e a linha (ex.: `main.py:45`).
+            2. Explique o que está errado e por quê.
+            3. Mostre o código corrigido em bloco markdown.
+            4. Classifique a severidade: **CRÍTICO**, **IMPORTANTE** ou **SUGESTÃO**.
+
+            Foque em:
+
+            **Segurança (CRÍTICO se encontrado):**
+            - Segredos, chaves de API ou credenciais expostas no diff.
+            - Prompt injection: input do usuário concatenado direto em prompt do LLM.
+            - Falta de validação de input (max_length, tipos, sanitização).
+            - Endpoints novos sem autenticação, rate limit ou CORS configurado.
+            - Dados sensíveis (chunks de material com copyright, PII) retornados em respostas.
+            - SQL/NoSQL/command injection.
+
+            **Qualidade de código:**
+            - Funções com mais de uma responsabilidade (SRP).
+            - Código duplicado que deveria virar helper.
+            - Magic numbers/strings que deveriam estar em config/env.
+            - Naming inconsistente (mistura de português/inglês, typos como `dinamic`, `Fontend`, `quizz`, `compair`).
+            - Dead code, imports não usados, comentários desnecessários.
+            - `sys.path.append` (sintoma de falta de `__init__.py`).
+            - Side effects no nível do módulo (código rodando no import).
+
+            **Arquitetura:**
+            - Tight coupling que impede teste (ex.: classes que instanciam suas dependências).
+            - Camadas misturadas (controller fazendo lógica de DB, etc.).
+            - Quebra de contrato de API (mudança de schema sem versionamento).
+
+            **Performance:**
+            - Operações bloqueantes dentro de `async def`.
+            - Loops O(n²) em strings (ex.: `text += ...; text = text.replace(...)` dentro do loop).
+            - Falta de batching em chamadas a APIs pagas (Gemini, Nomic).
+            - Falta de cache em embeddings de queries idênticas.
+            - `insert_many` sem dedup que duplica dados em re-runs.
+
+            **Tratamento de erro:**
+            - `except` genérico ou `except Exception` silenciando falhas.
+            - Falta de fallback em chamadas de API externas.
+            - HTTP 200 retornado em caso de erro do LLM (deveria ser 502).
+            - `response.text` usado sem checar se é `None` (Gemini pode bloquear).
+
+            **Testes e observabilidade:**
+            - Código novo sem teste em caminho crítico.
+            - `print()` em vez de `logging` estruturado.
+            - Falta de request_id, métricas ou tracing em endpoints novos.
+
+            **Formato da resposta:**
+            - Comece com um resumo de 2-3 linhas: o que o PR faz e veredito geral (aprovar / mudanças solicitadas / bloquear).
+            - Liste os achados agrupados por severidade (CRÍTICO primeiro).
+            - Se o PR estiver bom, diga isso explicitamente em vez de inventar problemas.
+            - Não comente sobre estilo trivial (espaços, aspas) — foque no que importa.
+            - Responda em português.
