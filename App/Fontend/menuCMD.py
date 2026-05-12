@@ -14,7 +14,7 @@ class MenuBackend():
     def __init__(self):
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.client.chats.create
-        self.chat = self.client.chats.create(model="gemma-3-27b-it", 
+        self.chat = self.client.chats.create(model="gemma-4-31b-it", 
                                              config= types.GenerateContentConfig(
                                                  temperature=0.1))
         self.recovery = RagGenerate()
@@ -80,7 +80,7 @@ class MenuBackend():
                 context_text = ""
                 if 'documents' in relevant_docs and relevant_docs['documents']:
                     for doc in relevant_docs['documents']:
-                        context_text += f"{doc['chunk']}\n\n"
+                        context_text += f"Conteúdo: {doc['chunk']}\nFonte: {doc['file_name']}\n\n"
 
                 full_prompt = f"""{persona}
                     {instruction}
