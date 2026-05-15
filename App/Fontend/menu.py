@@ -11,7 +11,7 @@ class Menu():
     def __init__(self):
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.client.chats.create
-        self.chat = self.client.chats.create(model="gemma-3-27b-it", 
+        self.chat = self.client.chats.create(model="gemma-4-31b-it", 
                                              config= types.GenerateContentConfig(
                                                  temperature=0.1))
         self.instructions = Instructions()
