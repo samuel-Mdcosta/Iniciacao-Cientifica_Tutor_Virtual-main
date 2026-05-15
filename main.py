@@ -16,7 +16,7 @@ class RequisicaoQuizz(BaseModel):
 class RequisicaoLlm(BaseModel):
     texto: str
 
-MODEL = "gemini-3-flash-preview"
+MODEL = "gemma-4-31b-it"
 GENERATE_CONFIG = types.GenerateContentConfig(temperature=0.1, max_output_tokens=2048)
 
 class Menu():
