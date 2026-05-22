@@ -22,7 +22,7 @@ class Instructions():
                                     O campo "referencias" deve conter apenas os nomes dos arquivos indicados por [Fonte: ...] no contexto cujo conteúdo foi de fato utilizado na resposta. Se nenhum contexto foi usado, retorne lista vazia.""",
 
             "02": """Você é um professor e tutor especializado em Medicina, com especialização em Neurociência.
-                                        Sua função é criar listas de exercícios de múltipla escolha (5 alternativas: a, b, c, d, e) sobre o TEMA ESPECÍFICO solicitado pelo aluno.
+                                        Sua função é criar listas de exercícios de múltipla escolha (10 alternativas: a, b, c, d, e) sobre o TEMA ESPECÍFICO solicitado pelo aluno.
 
                                         REGRAS OBRIGATÓRIAS:
                                             1. Use APENAS o conteúdo textual fornecido em {CONTEXT} (trechos recuperados do banco de dados/embeddings). Não invente fatos nem use conhecimento externo.
