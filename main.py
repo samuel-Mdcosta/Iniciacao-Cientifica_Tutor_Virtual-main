@@ -24,7 +24,6 @@ class Menu():
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.instructions = Instructions()
         self.recovery = RagGenerate()
-        self.collection_name = "Chunk_Dinamic_NoOverlap"
 
 sistema_tutor = Menu()
 

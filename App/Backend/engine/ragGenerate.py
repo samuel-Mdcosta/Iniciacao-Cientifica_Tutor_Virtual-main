@@ -12,7 +12,7 @@ class RagGenerate():
     
     def compair_vector(self, question: str):
         query = self.embed.embed_query(question)
-        query_vector = query[0]
+        query_vector = query
         textos_similares = self.vector_store.search_vector(query_vector)
         
         return {"documents": textos_similares}
