@@ -33,45 +33,4 @@ class ChunkGenerate():
             dict_chunks[key] = chunks
 
         return dict_chunks
-
-    def create_dinamic_chunk(self):
-            dict_files = self.extractor.extract_text_from_docs()
-            dict_chunks = {}
-
-            for key, value in dict_files.items():
-                text = value
-                
-                chunks = []
-                overlap = ""
-                count = 0
-                index_letter = 0
-                index_start = 0
-                index_overlap = 1
-                
-                while index_letter < len(text):
-                    if text[index_letter] == ".":
-                        chunk = text[index_start:index_letter + 1]
-                        index_start = index_letter + 2
-                        chunks.append(overlap + chunk)
-
-                        while count < self.overlap_dinamic_size:
-                            if index_overlap > len(chunk): 
-                                break
-
-                            if chunk[-index_overlap] in [" ", ","]:
-                                count += 1
-                            
-                            if index_overlap == len(chunk):
-                                break
-
-                            index_overlap += 1
-
-                        overlap = chunk[-index_overlap + 1:]
-                        count = 1
-                        index_overlap = 0
-
-                    index_letter += 1
-
-                dict_chunks[key] = chunks
-
-            return dict_chunks
+    
