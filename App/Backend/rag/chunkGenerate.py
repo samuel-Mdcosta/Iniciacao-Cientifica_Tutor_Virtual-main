@@ -3,9 +3,8 @@ from rag.extractorPDF import ExtractorPDF
 class ChunkGenerate():
     def __init__(self):
         self.extractor = ExtractorPDF()
-        self.chunk_static_size = 500
-        self.overlap_static_size = 50
-        self.overlap_dinamic_size = 10
+        self.chunk_static_size = 1000
+        self.overlap_static_size = 100
 
     def create_static_chunk(self):
         dict_files = self.extractor.extract_text_from_docs()
