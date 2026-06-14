@@ -56,9 +56,16 @@ async def perguntas(req: RequisicaoQuizz):
     except json.JSONDecodeError:
         quizz_estruturado = {"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
 
+    uso = json_response.usage_metadata
+
     return {
         "tema": req.texto,
-        "quizz_gerado_llm": quizz_estruturado
+        "quizz_gerado_llm": quizz_estruturado,
+        "uso_tokens": {
+            "entrada": uso.prompt_token_count,
+            "saida": uso.candidates_token_count,
+            "total": uso.total_token_count,
+        }
     }
 
 @app.post("/llm")
@@ -87,8 +94,15 @@ async def llm_response(req: RequisicaoLlm):
     except json.JSONDecodeError:
         resposta_estruturada = {"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
 
+    uso = response.usage_metadata
+
     return {
         "pergunta": req.texto,
         "resposta_tutor": resposta_estruturada,
-        "documentos_utilizados": relevant_docs
+        "documentos_utilizados": relevant_docs,
+        "uso_tokens": {
+            "entrada": uso.prompt_token_count,
+            "saida": uso.candidates_token_count,
+            "total": uso.total_token_count,
+        }
     }
