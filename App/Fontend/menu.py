@@ -18,7 +18,7 @@ class Menu():
         self.recovery = RagGenerate()
 
     def post_message_rag(self, question):
-        relevant_docs = self.recovery.compair_vector(question)
+        relevant_docs = self.recovery.compare_vector(question)
 
         context_text = ""
         if 'documents' in relevant_docs and relevant_docs['documents']:

@@ -75,7 +75,7 @@ class MenuBackend():
 
             if opt != "3":
 
-                relevant_docs = self.recovery.compair_vector(question)
+                relevant_docs = self.recovery.compare_vector(question)
 
                 context_text = ""
                 if 'documents' in relevant_docs and relevant_docs['documents']:

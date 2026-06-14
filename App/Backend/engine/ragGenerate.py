@@ -10,7 +10,7 @@ class RagGenerate():
         self.vector_store = VectorStoreMongo()
         self.embed = EmbedGenerate()
     
-    def compair_vector(self, question: str):
+    def compare_vector(self, question: str):
         query = self.embed.embed_query(question)
         query_vector = query
         textos_similares = self.vector_store.search_vector(query_vector)
