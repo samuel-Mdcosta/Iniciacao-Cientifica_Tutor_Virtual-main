@@ -1,15 +1,20 @@
 from google import genai
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from App.Backend.config.instructions import Instructions
 import os
 import json
+import logging
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from App.Backend.engine.ragGenerate import RagGenerate
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+MODEL = "gemini-flash-lite-latest"
 
 
 def montar_uso_tokens(usage):
@@ -20,20 +25,44 @@ def montar_uso_tokens(usage):
         "total": usage.total_token_count if usage else None,
     }
 
+
+def montar_contexto(relevant_docs):
+    """Monta o texto de contexto (RAG) a partir dos documentos recuperados."""
+    context_text = ""
+    if 'documents' in relevant_docs and relevant_docs['documents']:
+        for doc in relevant_docs['documents']:
+            context_text += f"[Fonte: {doc['file_name']}]\n{doc['chunk']}\n\n"
+    return context_text
+
+
+def build_config(system_instruction):
+    """Config do Gemini com a instrução do sistema separada do input do usuário."""
+    return types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        temperature=0.1,
+        max_output_tokens=2048,
+    )
+
+
+def conteudo_usuario(texto):
+    """Encapsula o input do usuário como turno de role 'user' (mitiga prompt injection)."""
+    return [types.Content(role="user", parts=[types.Part(text=texto)])]
+
+
 class RequisicaoQuizz(BaseModel):
-    texto: str
+    texto: str = Field(..., min_length=3, max_length=1000)
+
 
 class RequisicaoLlm(BaseModel):
-    texto: str
+    texto: str = Field(..., min_length=3, max_length=1000)
 
-MODEL = "gemini-flash-lite-latest"
-GENERATE_CONFIG = types.GenerateContentConfig(temperature=0.1, max_output_tokens=2048)
 
 class Menu():
     def __init__(self):
         self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         self.instructions = Instructions()
         self.recovery = RagGenerate()
+
 
 sistema_tutor = Menu()
 
@@ -43,21 +72,16 @@ app = FastAPI()
 @app.post("/quizz")
 async def perguntas(req: RequisicaoQuizz):
     instrucao_quiz = sistema_tutor.instructions.get_instructions("02")
-    
-    relevant_docs = sistema_tutor.recovery.compair_vector(req.texto)
-    
-    context_text = ""
-    if 'documents' in relevant_docs and relevant_docs['documents']:
-        for doc in relevant_docs['documents']:
-            context_text += f"[Fonte: {doc['file_name']}]\n{doc['chunk']}\n\n"
 
-    full_prompt = f"""{instrucao_quiz.format(CONTEXT=context_text)}
-    Tema solicitado: {req.texto}
-    """
-    
+    relevant_docs = sistema_tutor.recovery.compare_vector(req.texto)
+    context_text = montar_contexto(relevant_docs)
+
     json_response = sistema_tutor.client.models.generate_content(
-        model=MODEL, contents=full_prompt, config=GENERATE_CONFIG
+        model=MODEL,
+        contents=conteudo_usuario(req.texto),
+        config=build_config(instrucao_quiz.format(CONTEXT=context_text)),
     )
+
     texto_nformatado = json_response.text
     if texto_nformatado is None:
         return JSONResponse(
@@ -69,8 +93,12 @@ async def perguntas(req: RequisicaoQuizz):
 
     try:
         quizz_estruturado = json.loads(texto_formatado)
-    except json.JSONDecodeError:
-        quizz_estruturado = {"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
+    except json.JSONDecodeError as e:
+        logger.warning("LLM retornou JSON inválido em /quizz: %s | raw=%.200s", e, texto_nformatado)
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
+        )
 
     return {
         "tema": req.texto,
@@ -78,22 +106,18 @@ async def perguntas(req: RequisicaoQuizz):
         "uso_tokens": montar_uso_tokens(json_response.usage_metadata),
     }
 
+
 @app.post("/llm")
 async def llm_response(req: RequisicaoLlm):
     response_prompt = sistema_tutor.instructions.get_instructions("01")
-    relevant_docs = sistema_tutor.recovery.compair_vector(req.texto)
-    context_text = ""
-    if 'documents' in relevant_docs and relevant_docs['documents']:
-        for doc in relevant_docs['documents']:
-            context_text += f"[Fonte: {doc['file_name']}]\n{doc['chunk']}\n\n"
 
-    full_prompt = f"""{response_prompt.format(CONTEXT=context_text)}
+    relevant_docs = sistema_tutor.recovery.compare_vector(req.texto)
+    context_text = montar_contexto(relevant_docs)
 
-        Pergunta do aluno: {req.texto}
-        """
-        
     response = sistema_tutor.client.models.generate_content(
-        model=MODEL, contents=full_prompt, config=GENERATE_CONFIG
+        model=MODEL,
+        contents=conteudo_usuario(req.texto),
+        config=build_config(response_prompt.format(CONTEXT=context_text)),
     )
 
     texto_nformatado = response.text
@@ -107,8 +131,12 @@ async def llm_response(req: RequisicaoLlm):
 
     try:
         resposta_estruturada = json.loads(texto_formatado)
-    except json.JSONDecodeError:
-        resposta_estruturada = {"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
+    except json.JSONDecodeError as e:
+        logger.warning("LLM retornou JSON inválido em /llm: %s | raw=%.200s", e, texto_nformatado)
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
+        )
 
     return {
         "pergunta": req.texto,
