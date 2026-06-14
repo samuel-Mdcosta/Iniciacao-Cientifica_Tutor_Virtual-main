@@ -5,10 +5,20 @@ from App.Backend.config.instructions import Instructions
 import os
 import json
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from App.Backend.engine.ragGenerate import RagGenerate
 
 load_dotenv()
+
+
+def montar_uso_tokens(usage):
+    """Extrai a contagem real de tokens; usage pode ser None em respostas bloqueadas."""
+    return {
+        "entrada": usage.prompt_token_count if usage else None,
+        "saida": usage.candidates_token_count if usage else None,
+        "total": usage.total_token_count if usage else None,
+    }
 
 class RequisicaoQuizz(BaseModel):
     texto: str
@@ -49,6 +59,12 @@ async def perguntas(req: RequisicaoQuizz):
         model=MODEL, contents=full_prompt, config=GENERATE_CONFIG
     )
     texto_nformatado = json_response.text
+    if texto_nformatado is None:
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Resposta bloqueada pelo filtro de segurança do modelo"}
+        )
+
     texto_formatado = texto_nformatado.replace("```json", "").replace("```", "").strip()
 
     try:
@@ -56,16 +72,10 @@ async def perguntas(req: RequisicaoQuizz):
     except json.JSONDecodeError:
         quizz_estruturado = {"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
 
-    uso = json_response.usage_metadata
-
     return {
         "tema": req.texto,
         "quizz_gerado_llm": quizz_estruturado,
-        "uso_tokens": {
-            "entrada": uso.prompt_token_count,
-            "saida": uso.candidates_token_count,
-            "total": uso.total_token_count,
-        }
+        "uso_tokens": montar_uso_tokens(json_response.usage_metadata),
     }
 
 @app.post("/llm")
@@ -87,6 +97,12 @@ async def llm_response(req: RequisicaoLlm):
     )
 
     texto_nformatado = response.text
+    if texto_nformatado is None:
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Resposta bloqueada pelo filtro de segurança do modelo"}
+        )
+
     texto_formatado = texto_nformatado.replace("```json", "").replace("```", "").strip()
 
     try:
@@ -94,15 +110,9 @@ async def llm_response(req: RequisicaoLlm):
     except json.JSONDecodeError:
         resposta_estruturada = {"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
 
-    uso = response.usage_metadata
-
     return {
         "pergunta": req.texto,
         "resposta_tutor": resposta_estruturada,
         "documentos_utilizados": relevant_docs,
-        "uso_tokens": {
-            "entrada": uso.prompt_token_count,
-            "saida": uso.candidates_token_count,
-            "total": uso.total_token_count,
-        }
+        "uso_tokens": montar_uso_tokens(response.usage_metadata),
     }
