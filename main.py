@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from App.Backend.config.instructions import Instructions
 import os
 import json
+import random
 import logging
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
@@ -33,6 +34,29 @@ def montar_contexto(relevant_docs):
         for doc in relevant_docs['documents']:
             context_text += f"[Fonte: {doc['file_name']}]\n{doc['chunk']}\n\n"
     return context_text
+
+
+def embaralhar_alternativas(quizz_estruturado):
+    questoes = quizz_estruturado.get("questoes") if isinstance(quizz_estruturado, dict) else None
+    if not isinstance(questoes, list):
+        return quizz_estruturado
+
+    for questao in questoes:
+        if not isinstance(questao, dict):
+            continue
+        opcoes = questao.get("opcoes")
+        correta = questao.get("correta")
+        if not isinstance(opcoes, list) or not isinstance(correta, int):
+            continue
+        if not (0 <= correta < len(opcoes)):
+            continue
+
+        indices = list(range(len(opcoes)))
+        random.shuffle(indices)
+        questao["opcoes"] = [opcoes[i] for i in indices]
+        questao["correta"] = indices.index(correta)
+
+    return quizz_estruturado
 
 
 def build_config(system_instruction):
@@ -99,6 +123,8 @@ async def perguntas(req: RequisicaoQuizz):
             status_code=502,
             content={"erro": "Formato inválido gerado pela IA", "texto_nformatado": texto_nformatado}
         )
+
+    quizz_estruturado = embaralhar_alternativas(quizz_estruturado)
 
     return {
         "tema": req.texto,
