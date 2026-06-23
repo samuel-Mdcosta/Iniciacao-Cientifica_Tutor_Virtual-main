@@ -42,7 +42,7 @@ class VectorStoreMongo:
             self.collection_access.insert_many(documentos)
 
 
-    def search_vector(self, query_vector, limit=8):
+    def search_vector(self, query_vector, limit=4):
         pipeline = [
             {
                 "$vectorSearch": {
