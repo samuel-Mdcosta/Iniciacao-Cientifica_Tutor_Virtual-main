@@ -19,7 +19,6 @@ MODEL = "gemini-flash-lite-latest"
 
 
 def montar_uso_tokens(usage):
-    """Extrai a contagem real de tokens; usage pode ser None em respostas bloqueadas."""
     return {
         "entrada": usage.prompt_token_count if usage else None,
         "saida": usage.candidates_token_count if usage else None,
@@ -28,7 +27,6 @@ def montar_uso_tokens(usage):
 
 
 def montar_contexto(relevant_docs):
-    """Monta o texto de contexto (RAG) a partir dos documentos recuperados."""
     context_text = ""
     if 'documents' in relevant_docs and relevant_docs['documents']:
         for doc in relevant_docs['documents']:
@@ -60,7 +58,6 @@ def embaralhar_alternativas(quizz_estruturado):
 
 
 def build_config(system_instruction):
-    """Config do Gemini com a instrução do sistema separada do input do usuário."""
     return types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=0.1,
@@ -69,7 +66,6 @@ def build_config(system_instruction):
 
 
 def conteudo_usuario(texto):
-    """Encapsula o input do usuário como turno de role 'user' (mitiga prompt injection)."""
     return [types.Content(role="user", parts=[types.Part(text=texto)])]
 
 
