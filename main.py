@@ -28,6 +28,15 @@ logger = logging.getLogger(__name__)
 
 MODEL = "gemini-flash-lite-latest"
 
+# Limite de tokens de saída por endpoint. O chat fica em 2048 para economizar.
+# O quiz (10 questões com alternativas, explicação e subtema) e o feedback de
+# desempenho passam disso: com 2048 a resposta era cortada no meio e o JSON
+# ficava inválido (502). O Gemini cobra só o que gera, então um teto maior não
+# encarece respostas curtas.
+MAX_TOKENS_CHAT = 2048
+MAX_TOKENS_QUIZ = 8192
+MAX_TOKENS_FEEDBACK = 4096
+
 
 def verificar_chave_servico(x_api_key: str = Header(default=None)):
     chave_esperada = os.getenv("SHARED_SECRET")
@@ -85,11 +94,11 @@ def embaralhar_alternativas(quizz_estruturado):
     return quizz_estruturado
 
 
-def build_config(system_instruction):
+def build_config(system_instruction, max_output_tokens=MAX_TOKENS_CHAT):
     return types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=0.1,
-        max_output_tokens=2048,
+        max_output_tokens=max_output_tokens,
     )
 
 
@@ -163,7 +172,7 @@ async def perguntas(req: RequisicaoQuizz):
     json_response = sistema_tutor.client.models.generate_content(
         model=MODEL,
         contents=conteudo_usuario(req.texto),
-        config=build_config(instrucao_quiz.format(CONTEXT=context_text)),
+        config=build_config(instrucao_quiz.format(CONTEXT=context_text), max_output_tokens=MAX_TOKENS_QUIZ),
     )
 
     texto_nformatado = json_response.text
@@ -255,7 +264,7 @@ def feedback_desempenho(req: RequisicaoFeedback):
             contents=conteudo_usuario(montar_dados_aluno(req.model_dump())),
             config=build_config(instrucao_feedback.format(
                 CONTEXT=context_text or "Nenhum trecho do material foi recuperado."
-            )),
+            ), max_output_tokens=MAX_TOKENS_FEEDBACK),
         )
     except genai_errors.APIError as e:
         logger.warning("Falha na chamada ao LLM em /feedback: %s", e)
