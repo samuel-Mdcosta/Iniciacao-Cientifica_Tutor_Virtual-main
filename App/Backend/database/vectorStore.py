@@ -15,17 +15,23 @@ _mongo_client = None
 def _get_mongo_client() -> MongoClient:
     global _mongo_client
     if _mongo_client is None:
-        _mongo_client = MongoClient(os.getenv("MONGO_ADDRESS"), server_api=ServerApi('1'))
+        _mongo_client = MongoClient(
+            os.getenv("MONGO_ADDRESS"),
+            server_api=ServerApi('1'),
+            connect=False,
+            serverSelectionTimeoutMS=5000,
+        )
     return _mongo_client
 
 class VectorStoreMongo:
     def __init__(self):
-        client = _get_mongo_client()
-        self.db_access = client[os.getenv("MONGO_DB")]
-        self.collection_access = self.db_access[os.getenv("MONGO_COLLECTION")]
-
         self.embedding = EmbedGenerate()
         self.chunking = ChunkGenerate()
+
+    @property
+    def collection_access(self):
+        client = _get_mongo_client()
+        return client[os.getenv("MONGO_DB")][os.getenv("MONGO_COLLECTION")]
 
     def insert_several(self):
         chunk_collection = self.chunking.create_static_chunk()
