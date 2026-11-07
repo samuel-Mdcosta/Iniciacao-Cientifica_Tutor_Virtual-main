@@ -6,9 +6,10 @@ import os
 import json
 import random
 import logging
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
+from pymongo.errors import PyMongoError
 from App.Backend.engine.ragGenerate import RagGenerate
 
 load_dotenv()
@@ -18,12 +19,29 @@ logger = logging.getLogger(__name__)
 MODEL = "gemini-flash-lite-latest"
 
 
+def verificar_chave_servico(x_api_key: str = Header(default=None)):
+    chave_esperada = os.getenv("SHARED_SECRET")
+    if not chave_esperada or x_api_key != chave_esperada:
+        raise HTTPException(status_code=401, detail="Chave de acesso inválida")
+
+
 def montar_uso_tokens(usage):
     return {
         "entrada": usage.prompt_token_count if usage else None,
         "saida": usage.candidates_token_count if usage else None,
         "total": usage.total_token_count if usage else None,
     }
+
+
+def recuperar_documentos(texto):
+    try:
+        return sistema_tutor.recovery.compare_vector(texto), None
+    except PyMongoError as e:
+        logger.error("Falha ao consultar o MongoDB: %s", e)
+        return None, JSONResponse(
+            status_code=503,
+            content={"erro": "Banco de vetores indisponível no momento"},
+        )
 
 
 def montar_contexto(relevant_docs):
@@ -89,11 +107,13 @@ sistema_tutor = Menu()
 app = FastAPI()
 
 
-@app.post("/quizz")
+@app.post("/quizz", dependencies=[Depends(verificar_chave_servico)])
 async def perguntas(req: RequisicaoQuizz):
     instrucao_quiz = sistema_tutor.instructions.get_instructions("02")
 
-    relevant_docs = sistema_tutor.recovery.compare_vector(req.texto)
+    relevant_docs, erro = recuperar_documentos(req.texto)
+    if erro is not None:
+        return erro
     context_text = montar_contexto(relevant_docs)
 
     json_response = sistema_tutor.client.models.generate_content(
@@ -129,11 +149,13 @@ async def perguntas(req: RequisicaoQuizz):
     }
 
 
-@app.post("/llm")
+@app.post("/llm", dependencies=[Depends(verificar_chave_servico)])
 async def llm_response(req: RequisicaoLlm):
     response_prompt = sistema_tutor.instructions.get_instructions("01")
 
-    relevant_docs = sistema_tutor.recovery.compare_vector(req.texto)
+    relevant_docs, erro = recuperar_documentos(req.texto)
+    if erro is not None:
+        return erro
     context_text = montar_contexto(relevant_docs)
 
     response = sistema_tutor.client.models.generate_content(
