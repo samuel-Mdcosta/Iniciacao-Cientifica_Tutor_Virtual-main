@@ -210,6 +210,55 @@ Gera uma lista de questões de múltipla escolha (5 alternativas) sobre um tema,
 }
 ```
 
+Cada questão também traz `"subtema"`: o conceito específico do tema que ela avalia. O backend guarda esse campo para o feedback de desempenho.
+
+---
+
+### `POST /feedback`
+
+Gera o **feedback de desempenho** do aluno: não comenta questões isoladas, e sim em quais áreas ele tem mais dificuldade, **o que** estudar, **por que** e **onde** (materiais do RAG).
+
+Os números (taxas, nível, tendência) e a escolha das áreas prioritárias chegam já calculados pelo backend; o LLM só diagnostica o padrão dos erros. Para cada área prioritária é feita uma busca vetorial com o tema e os subtemas errados, e `onde_estudar` só aceita materiais que vieram dessa busca (referências inventadas são descartadas).
+
+**Request (resumido):**
+```json
+{
+  "desempenho_por_tema": [
+    { "tema": "Hipocampo e Sistema Límbico", "tentativas": 2, "questoes": 20, "acertos": 8, "erros": 12,
+      "taxa_acerto": 40.0, "taxa_recente": 40.0, "nivel": "critico", "tendencia": "melhorando" }
+  ],
+  "areas_prioritarias": [
+    { "tema": "Hipocampo e Sistema Límbico",
+      "questoes_erradas": [{ "pergunta": "...", "subtema": "Circuito de Papez", "resposta_escolhida": "...", "resposta_correta": "..." }],
+      "subtemas_acertados": ["Amígdala e emoção"] }
+  ],
+  "temas_nao_praticados": ["Memória e Aprendizagem"]
+}
+```
+
+**Response:**
+```json
+{
+  "feedback": {
+    "resumo_geral": "...",
+    "areas_prioritarias": [
+      { "tema": "Hipocampo e Sistema Límbico", "diagnostico": "...", "o_que_estudar": ["Circuito de Papez"],
+        "por_que_estudar": "...", "onde_estudar": ["Nome do material"] }
+    ],
+    "pontos_fortes": ["..."],
+    "proximos_passos": ["..."]
+  },
+  "uso_tokens": { "entrada": 0, "saida": 0, "total": 0 }
+}
+```
+
+### Testes
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ---
 
 ## Variáveis de Ambiente

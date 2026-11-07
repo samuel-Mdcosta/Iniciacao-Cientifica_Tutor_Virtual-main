@@ -1,6 +1,8 @@
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
+from google.genai import errors as genai_errors
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Annotated, List, Literal, Optional
 from App.Backend.config.instructions import Instructions
 import os
 import json
@@ -11,6 +13,14 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from pymongo.errors import PyMongoError
 from App.Backend.engine.ragGenerate import RagGenerate
+from App.Backend.engine.feedbackDesempenho import (
+    interpretar_json_llm,
+    montar_consulta_area,
+    montar_contexto_areas,
+    montar_dados_aluno,
+    recuperar_documentos as recuperar_documentos_por_tema,
+    sanitizar_feedback,
+)
 
 load_dotenv()
 
@@ -93,6 +103,40 @@ class RequisicaoQuizz(BaseModel):
 
 class RequisicaoLlm(BaseModel):
     texto: str = Field(..., min_length=3, max_length=1000)
+
+
+TextoCurto = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+
+
+class DesempenhoTema(BaseModel):
+    tema: TextoCurto
+    tentativas: int = Field(..., ge=0)
+    questoes: int = Field(..., ge=0)
+    acertos: int = Field(..., ge=0)
+    erros: int = Field(..., ge=0)
+    taxa_acerto: float = Field(..., ge=0, le=100)
+    taxa_recente: float = Field(..., ge=0, le=100)
+    nivel: Literal["critico", "atencao", "bom"]
+    tendencia: Optional[Literal["melhorando", "piorando", "estavel"]] = None
+
+
+class QuestaoErrada(BaseModel):
+    pergunta: str = Field(..., min_length=1, max_length=2000)
+    subtema: Optional[str] = Field(None, max_length=255)
+    resposta_escolhida: Optional[str] = Field(None, max_length=1000)
+    resposta_correta: Optional[str] = Field(None, max_length=1000)
+
+
+class AreaPrioritaria(BaseModel):
+    tema: TextoCurto
+    questoes_erradas: List[QuestaoErrada] = Field(default_factory=list, max_length=15)
+    subtemas_acertados: List[TextoCurto] = Field(default_factory=list, max_length=10)
+
+
+class RequisicaoFeedback(BaseModel):
+    desempenho_por_tema: List[DesempenhoTema] = Field(..., min_length=1, max_length=50)
+    areas_prioritarias: List[AreaPrioritaria] = Field(default_factory=list, max_length=3)
+    temas_nao_praticados: List[TextoCurto] = Field(default_factory=list, max_length=20)
 
 
 class Menu():
@@ -186,5 +230,67 @@ async def llm_response(req: RequisicaoLlm):
         "pergunta": req.texto,
         "resposta_tutor": resposta_estruturada,
         "documentos_utilizados": relevant_docs,
+        "uso_tokens": montar_uso_tokens(response.usage_metadata),
+    }
+
+
+# Feedback de desempenho: analisa o rendimento do aluno (não questões isoladas).
+# Os números e a escolha das áreas prioritárias vêm calculados do backend; o LLM
+# diagnostica o padrão dos erros e indica o que, onde e por que estudar, com base no RAG.
+# Rota síncrona (def) para o FastAPI rodar as chamadas bloqueantes (Gemini/Mongo) no threadpool.
+@app.post("/feedback", dependencies=[Depends(verificar_chave_servico)])
+def feedback_desempenho(req: RequisicaoFeedback):
+    instrucao_feedback = sistema_tutor.instructions.get_instructions("03")
+
+    consultas = {
+        area.tema: montar_consulta_area(area.tema, [q.subtema for q in area.questoes_erradas])
+        for area in req.areas_prioritarias
+    }
+    documentos_por_tema = recuperar_documentos_por_tema(consultas, sistema_tutor.recovery)
+    context_text, fontes_por_tema = montar_contexto_areas(documentos_por_tema)
+
+    try:
+        response = sistema_tutor.client.models.generate_content(
+            model=MODEL,
+            contents=conteudo_usuario(montar_dados_aluno(req.model_dump())),
+            config=build_config(instrucao_feedback.format(
+                CONTEXT=context_text or "Nenhum trecho do material foi recuperado."
+            )),
+        )
+    except genai_errors.APIError as e:
+        logger.warning("Falha na chamada ao LLM em /feedback: %s", e)
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Não foi possível gerar o feedback com a IA"}
+        )
+
+    texto_nformatado = response.text
+    if texto_nformatado is None:
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Resposta bloqueada pelo filtro de segurança do modelo"}
+        )
+
+    try:
+        feedback_bruto = interpretar_json_llm(texto_nformatado)
+    except json.JSONDecodeError as e:
+        logger.warning("LLM retornou JSON inválido em /feedback: %s | raw=%.200s", e, texto_nformatado)
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Formato inválido gerado pela IA"}
+        )
+
+    temas_prioritarios = [area.tema for area in req.areas_prioritarias]
+    feedback = sanitizar_feedback(feedback_bruto, temas_prioritarios, fontes_por_tema)
+
+    if not feedback["resumo_geral"] and not feedback["areas_prioritarias"]:
+        logger.warning("LLM retornou feedback vazio em /feedback | raw=%.200s", texto_nformatado)
+        return JSONResponse(
+            status_code=502,
+            content={"erro": "Formato inválido gerado pela IA"}
+        )
+
+    return {
+        "feedback": feedback,
         "uso_tokens": montar_uso_tokens(response.usage_metadata),
     }
