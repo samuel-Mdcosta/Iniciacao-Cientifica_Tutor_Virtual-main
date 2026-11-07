@@ -1,2 +1,16 @@
 .env
 .claude
+
+# Credenciais: só o .env.example vai para o repositório
+.env.*
+!.env.example
+
+# Python: ambiente virtual, bytecode e cache dos testes
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Sistema
+.DS_Store
