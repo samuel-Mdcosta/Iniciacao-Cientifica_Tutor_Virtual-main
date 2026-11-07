@@ -224,6 +224,21 @@ def test_feedback_fluxo_completo(cliente):
     assert dados_aluno["areas_prioritarias"][0]["tema"] == HIPOCAMPO
     assert dados_aluno["temas_nao_praticados"] == [MEMORIA]
 
+    # Com o limite do chat (2048) o feedback de 3 áreas pode ser cortado no meio.
+    assert chamada["config"].max_output_tokens == main.MAX_TOKENS_FEEDBACK
+
+
+def test_quizz_usa_limite_de_tokens_maior_que_o_do_chat(cliente):
+    # Com 2048 tokens o quiz de 10 questões era cortado e o JSON ficava inválido (502).
+    quiz = {"questoes": [{"pergunta": "P", "opcoes": ["a", "b"], "correta": 0, "explicacao": "e", "subtema": "s"}]}
+    client, models, _ = cliente(texto_llm=json.dumps(quiz))
+
+    resposta = client.post("/quizz", json={"texto": HIPOCAMPO})
+
+    assert resposta.status_code == 200
+    assert resposta.json()["quizz_gerado_llm"]["questoes"][0]["subtema"] == "s"
+    assert models.chamadas[0]["config"].max_output_tokens == main.MAX_TOKENS_QUIZ > main.MAX_TOKENS_CHAT
+
 
 def test_feedback_sem_areas_prioritarias_nao_consulta_rag(cliente):
     client, models, recuperacao = cliente(texto_llm=json.dumps({
