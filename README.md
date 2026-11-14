@@ -126,8 +126,6 @@ Crie um `.env` na raiz (modelo em `.env.example`):
 | `MONGO_DB` | Nome do banco |
 | `MONGO_COLLECTION` | Coleção dos chunks e vetores |
 
-> O `.env.example` ainda lista `MONGODB_URI`, mas o código lê `MONGO_ADDRESS`. Use `MONGO_ADDRESS`.
-
 As chaves do Gemini **nunca trafegam**: o Laravel só manda o rótulo (`principal` ou `reserva`) e o motor busca a chave
 no próprio ambiente.
 
