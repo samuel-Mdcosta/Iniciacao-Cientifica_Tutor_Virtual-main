@@ -1,8 +1,22 @@
-# Tutor Virtual de Neurociência — Sistema RAG
+# Tutor Virtual de Neurociência — Motor de IA (RAG)
 
-Backend de um Tutor Virtual baseado em Inteligência Artificial, desenvolvido como projeto de Iniciação Científica com foco no ensino de Neurociência Aplicada.
+Motor de IA do Tutor Virtual de Neurociência, projeto de Iniciação Científica com foco no ensino de Neurociência Aplicada.
 
-O sistema utiliza a arquitetura **RAG (Retrieval-Augmented Generation)** para fundamentar as respostas do tutor exclusivamente em materiais didáticos fornecidos (PDFs), mitigando alucinações do modelo de linguagem.
+Usa **RAG (Retrieval-Augmented Generation)** para fundamentar o que o modelo diz em materiais didáticos (PDFs), reduzindo
+alucinações. É um serviço FastAPI **chamado pelo backend Laravel** ([ragiaic](https://github.com/samuel-Mdcosta/ragiaic)),
+nunca direto pelo aluno ou pelo front.
+
+## Papel no sistema
+
+```
+Front (React)  →  ragiaic (Laravel)  →  este motor (FastAPI)  →  Gemini / MongoDB Atlas
+```
+
+- As **questões do quiz** vêm do banco de questões do Laravel (revisadas pelo docente), não são mais geradas aqui na hora.
+- Este motor gera o **feedback de desempenho** do aluno (`POST /feedback`), que é o endpoint em uso. `/quizz` e `/llm`
+  continuam disponíveis (geração de questões ao vivo e chat), mas o front atual não os usa.
+- **Quem controla a fila e os limites é o Laravel.** Ele escolhe a chave e o modelo de cada chamada, respeita os limites por
+  minuto e por dia e repete a tentativa quando preciso. O motor só gera.
 
 ---
 
@@ -12,43 +26,37 @@ O sistema utiliza a arquitetura **RAG (Retrieval-Augmented Generation)** para fu
 |---|---|
 | Linguagem | Python 3.10+ |
 | API Web | FastAPI + Uvicorn |
-| LLM Generativo | Google Gemini (`gemma-3-27b-it`) via `google-genai` SDK |
-| Embeddings | Nomic (`nomic-embed-text-v1.5`) |
-| Banco de Dados Vetorial | MongoDB Atlas (Vector Search) |
-| Processamento de PDF | PyMuPDF (`fitz`) + algoritmo de chunking customizado |
+| LLM generativo | Google Gemini via SDK `google-genai`. Modelo padrão: `gemini-flash-lite-latest` (constante `MODEL` em `main.py`) |
+| Embeddings | Gemini `gemini-embedding-2`, 3072 dimensões (mesmo SDK e mesma chave do LLM) |
+| Banco vetorial | MongoDB Atlas (Vector Search) |
+| PDF | PyMuPDF (`fitz`) + chunking estático |
+| Testes | pytest + httpx |
 
 ---
 
 ## Estrutura do Projeto
 
 ```
-Iniciacao-Cientifica_Tutor_Virtual/
-│
 ├── App/
 │   ├── Backend/
-│   │   ├── config/
-│   │   │   └── instructions.py      # Prompts de sistema (personas do tutor e do quizz)
-│   │   ├── database/
-│   │   │   └── vectorStore.py       # Conexão com MongoDB Atlas e operações de Vector Search
-│   │   ├── embedding/
-│   │   │   └── embedGenerate.py     # Geração de embeddings via API do Nomic
+│   │   ├── config/instructions.py       # Prompts de sistema: 01 chat, 02 quiz, 03 feedback de desempenho
+│   │   ├── database/vectorStore.py      # MongoDB Atlas: inserção e busca vetorial
+│   │   ├── embedding/embedGenerate.py   # Embeddings via Gemini
 │   │   ├── engine/
-│   │   │   └── ragGenerate.py       # Orquestração do pipeline RAG (recuperação + geração)
+│   │   │   ├── ragGenerate.py           # Recuperação: embedding da pergunta + busca vetorial
+│   │   │   └── feedbackDesempenho.py    # Monta consultas e contexto, interpreta e sanitiza o JSON do feedback
 │   │   └── rag/
-│   │       ├── extractorPDF.py      # Extração de texto de PDFs
-│   │       └── chunkGenerate.py     # Fragmentação de texto (chunking estático e dinâmico)
-│   └── Fontend/
-│       ├── api.py                   # Servidor Flask (interface legada)
-│       ├── menu.py                  # Lógica de menu e sessão de chat
-│       └── menuCMD.py               # Interface de linha de comando (CLI)
-│
-├── files/                           # PDFs dos materiais didáticos para ingestão
-├── files_test/                      # PDFs para testes
-├── main.py                          # Servidor FastAPI principal (endpoints /llm e /quizz)
-├── ingestao.py                      # Script de ETL: lê PDFs, gera chunks e salva no MongoDB
-├── requirements.txt                 # Dependências do projeto
-└── .env                             # Variáveis de ambiente (não versionado)
+│   │       ├── extractorPDF.py          # Extração de texto dos PDFs da pasta files/
+│   │       └── chunkGenerate.py         # Chunking estático
+│   └── Fontend/                         # Interface legada (Flask e CLI); não faz parte do sistema atual
+├── tests/                               # test_feedback.py (feedback, chaves, modelos, contexto pronto)
+├── main.py                              # Servidor FastAPI (/feedback, /quizz, /llm)
+├── ingestao.py                          # ETL: PDFs → chunks → embeddings → MongoDB
+├── requirements.txt / requirements-dev.txt
+└── .env                                 # Variáveis de ambiente (não versionado)
 ```
+
+A pasta `files/` (PDFs para ingestão) não é versionada: crie-a antes de rodar a ingestão.
 
 ---
 
@@ -57,30 +65,36 @@ Iniciacao-Cientifica_Tutor_Virtual/
 ### Pipeline RAG
 
 ```
-Pergunta do Aluno
+Texto (pergunta, tema ou áreas do aluno)
       │
       ▼
-[EmbedGenerate]  →  Gera vetor da pergunta (Nomic)
+[EmbedGenerate]     →  vetor da consulta (gemini-embedding-2)
       │
       ▼
-[VectorStoreMongo]  →  Busca os 8 chunks mais similares (MongoDB Vector Search)
+[VectorStoreMongo]  →  até 4 chunks mais similares, só os com score >= 0.75
       │
       ▼
-[Instructions]  →  Injeta contexto recuperado no prompt de sistema
+[Instructions]      →  contexto recuperado entra no prompt de sistema
       │
       ▼
-[Gemini LLM]  →  Gera resposta fundamentada no contexto
-      │
-      ▼
-Resposta estruturada (JSON)
+[Gemini]            →  resposta em JSON, fundamentada no contexto
 ```
 
 ### Chunking
 
-O sistema suporta dois modos de fragmentação de texto:
+Estático: chunks de 1000 caracteres com overlap de 100 caracteres.
 
-- **Estático:** chunks de 500 caracteres com overlap de 50 caracteres.
-- **Dinâmico:** fragmentação por fronteiras de sentenças (ponto final), com overlap de 10 palavras para manter coerência semântica entre chunks.
+### Feedback de desempenho
+
+O Laravel envia os números já calculados (taxas, nível, tendência) e as áreas prioritárias. O LLM não recalcula nada: só
+diagnostica o padrão dos erros e indica o que, por que e onde estudar. Dois modos de contexto:
+
+- **Com `contexto`** (o usado pelo Laravel hoje): o pedido já traz o material de apoio, montado das justificativas e dos
+  livros das questões que o aluno errou. O motor **não consulta o Atlas** e usa essas fontes. `citacoes` troca o título do
+  livro pela citação completa.
+- **Sem `contexto`:** o motor faz uma busca vetorial por área prioritária, com o tema e os subtemas errados.
+
+Em ambos, `onde_estudar` só aceita materiais que vieram do contexto; referências inventadas pelo modelo são descartadas.
 
 ---
 
@@ -89,9 +103,8 @@ O sistema suporta dois modos de fragmentação de texto:
 ### 1. Pré-requisitos
 
 - Python 3.10+
-- Conta no [MongoDB Atlas](https://www.mongodb.com/atlas) com um cluster configurado
+- Cluster no [MongoDB Atlas](https://www.mongodb.com/atlas) com a coleção de chunks já ingerida
 - Chave de API do [Google AI Studio](https://aistudio.google.com/) (Gemini)
-- Chave de API do [Nomic](https://nomic.ai/)
 
 ### 2. Instalar dependências
 
@@ -99,31 +112,33 @@ O sistema suporta dois modos de fragmentação de texto:
 pip install -r requirements.txt
 ```
 
-### 3. Configurar variáveis de ambiente
+### 3. Variáveis de ambiente
 
-Crie um arquivo `.env` na raiz do projeto:
+Crie um `.env` na raiz (modelo em `.env.example`):
 
-```env
-GEMINI_API_KEY=sua_chave_gemini
-NOMIC_API_KEY=sua_chave_nomic
-MONGO_ADDRESS=sua_connection_string_mongodb
-MONGO_DB=nome_do_banco
-MONGO_COLLECTION=nome_da_colecao
-```
+| Variável | Descrição |
+|---|---|
+| `GEMINI_API_KEY` | Chave principal do Gemini (rótulo `principal`) |
+| `GEMINI_API_KEY_BACKUP` | Chave reserva (rótulo `reserva`). Sem ela, um pedido com `chave: "reserva"` recebe 422 |
+| `GEMINI_MODEL`, `GEMINI_MODEL_FALLBACK` | Modelos aceitos no campo `modelo` do `/feedback`, além do padrão do motor. Devem ser os mesmos configurados no Laravel |
+| `SHARED_SECRET` | Segredo do serviço. Deve ser idêntico a `PYTHON_SERVICE_SECRET` no `.env` do Laravel |
+| `MONGO_ADDRESS` | Connection string do MongoDB Atlas |
+| `MONGO_DB` | Nome do banco |
+| `MONGO_COLLECTION` | Coleção dos chunks e vetores |
 
-### 4. Configurar o índice de Vector Search no MongoDB Atlas
+> O `.env.example` ainda lista `MONGODB_URI`, mas o código lê `MONGO_ADDRESS`. Use `MONGO_ADDRESS`.
 
-No MongoDB Atlas, crie um índice de Vector Search na coleção configurada com o nome `vector-search-index` apontando para o campo `vector`.
+As chaves do Gemini **nunca trafegam**: o Laravel só manda o rótulo (`principal` ou `reserva`) e o motor busca a chave
+no próprio ambiente.
+
+### 4. Índice de Vector Search no Atlas
+
+Na coleção configurada, crie um índice chamado `vector-search-index` no campo `vector`:
 
 ```json
 {
   "fields": [
-    {
-      "type": "vector",
-      "path": "vector",
-      "numDimensions": 768,
-      "similarity": "cosine"
-    }
+    { "type": "vector", "path": "vector", "numDimensions": 3072, "similarity": "cosine" }
   ]
 }
 ```
@@ -132,17 +147,14 @@ No MongoDB Atlas, crie um índice de Vector Search na coleção configurada com 
 
 ## Ingestão dos Dados
 
-Coloque os PDFs dos materiais didáticos na pasta `files/` e execute:
+Coloque os PDFs em `files/` e execute:
 
 ```bash
 python ingestao.py
 ```
 
-O script irá:
-1. Extrair o texto de todos os PDFs
-2. Fragmentar o texto em chunks
-3. Gerar embeddings via Nomic
-4. Salvar os vetores e chunks no MongoDB Atlas
+O script extrai o texto, gera os chunks, cria os embeddings e salva tudo no MongoDB Atlas. **Não rode a ingestão sobre uma
+coleção que já está populada**: os documentos seriam duplicados.
 
 ---
 
@@ -152,89 +164,40 @@ O script irá:
 uvicorn main:app --reload
 ```
 
-O servidor sobe em `http://localhost:8000`.
+Sobe em `http://localhost:8000`.
 
 ---
 
 ## Endpoints da API
 
-### `POST /llm`
+Todos exigem o cabeçalho `X-API-Key` com o valor de `SHARED_SECRET`; sem ele a resposta é 401.
 
-Envia uma pergunta ao tutor e recebe uma resposta fundamentada nos materiais didáticos.
+### `POST /feedback` (em uso)
 
-**Request:**
-```json
-{
-  "texto": "O que é a sinapse química?"
-}
-```
-
-**Response:**
-```json
-{
-  "pergunta": "O que é a sinapse química?",
-  "resposta_tutor": "...",
-  "documentos_utilizados": { "documents": [[...]] }
-}
-```
-
----
-
-### `POST /quizz`
-
-Gera uma lista de questões de múltipla escolha (5 alternativas) sobre um tema, com base no conteúdo dos materiais.
-
-**Request:**
-```json
-{
-  "texto": "Potencial de ação"
-}
-```
-
-**Response:**
-```json
-{
-  "tema": "Potencial de ação",
-  "quizz_gerado_llm": [
-    {
-      "question": "Enunciado da questão",
-      "options": {
-        "a": "...",
-        "b": "...",
-        "c": "...",
-        "d": "...",
-        "e": "..."
-      }
-    }
-  ]
-}
-```
-
-Cada questão também traz `"subtema"`: o conceito específico do tema que ela avalia. O backend guarda esse campo para o feedback de desempenho.
-
----
-
-### `POST /feedback`
-
-Gera o **feedback de desempenho** do aluno: não comenta questões isoladas, e sim em quais áreas ele tem mais dificuldade, **o que** estudar, **por que** e **onde** (materiais do RAG).
-
-Os números (taxas, nível, tendência) e a escolha das áreas prioritárias chegam já calculados pelo backend; o LLM só diagnostica o padrão dos erros. Para cada área prioritária é feita uma busca vetorial com o tema e os subtemas errados, e `onde_estudar` só aceita materiais que vieram dessa busca (referências inventadas são descartadas).
+Gera o feedback de desempenho do aluno.
 
 **Request (resumido):**
 ```json
 {
   "desempenho_por_tema": [
-    { "tema": "Hipocampo e Sistema Límbico", "tentativas": 2, "questoes": 20, "acertos": 8, "erros": 12,
+    { "tema": "Hipocampo e memória espacial", "tentativas": 2, "questoes": 20, "acertos": 8, "erros": 12,
       "taxa_acerto": 40.0, "taxa_recente": 40.0, "nivel": "critico", "tendencia": "melhorando" }
   ],
   "areas_prioritarias": [
-    { "tema": "Hipocampo e Sistema Límbico",
+    { "tema": "Hipocampo e memória espacial",
       "questoes_erradas": [{ "pergunta": "...", "subtema": "Circuito de Papez", "resposta_escolhida": "...", "resposta_correta": "..." }],
       "subtemas_acertados": ["Amígdala e emoção"] }
   ],
-  "temas_nao_praticados": ["Memória e Aprendizagem"]
+  "temas_nao_praticados": ["Sistemas e processos da memória"],
+  "chave": "principal",
+  "modelo": "gemini-3.5-flash-lite",
+  "contexto": "### Área: ...\n[Fonte: Neuroanatomia Funcional]\n...",
+  "fontes_por_tema": { "Hipocampo e memória espacial": ["Neuroanatomia Funcional"] },
+  "citacoes": { "Neuroanatomia Funcional": "MACHADO, A. Neuroanatomia funcional. ..." }
 }
 ```
+
+`chave` (`principal` ou `reserva`, padrão `principal`), `modelo`, `contexto`, `fontes_por_tema` e `citacoes` são opcionais.
 
 **Response:**
 ```json
@@ -242,8 +205,8 @@ Os números (taxas, nível, tendência) e a escolha das áreas prioritárias che
   "feedback": {
     "resumo_geral": "...",
     "areas_prioritarias": [
-      { "tema": "Hipocampo e Sistema Límbico", "diagnostico": "...", "o_que_estudar": ["Circuito de Papez"],
-        "por_que_estudar": "...", "onde_estudar": ["Nome do material"] }
+      { "tema": "Hipocampo e memória espacial", "diagnostico": "...", "o_que_estudar": ["Circuito de Papez"],
+        "por_que_estudar": "...", "onde_estudar": ["Neuroanatomia Funcional"] }
     ],
     "pontos_fortes": ["..."],
     "proximos_passos": ["..."]
@@ -252,23 +215,33 @@ Os números (taxas, nível, tendência) e a escolha das áreas prioritárias che
 }
 ```
 
-### Testes
+**Erros:**
+
+| Código | Quando |
+|---|---|
+| 401 | `X-API-Key` ausente ou errada |
+| 422 | `modelo` fora da lista permitida, ou `chave: "reserva"` sem `GEMINI_API_KEY_BACKUP` |
+| 502 | Falha do Gemini, resposta bloqueada ou JSON inválido. Quando vem do Gemini, o corpo traz `status_gemini` (ex.: 429), que o Laravel usa para decidir a nova tentativa |
+| 503 | Banco de vetores indisponível (só nos modos que consultam o Atlas) |
+
+### `POST /quizz` (legado)
+
+Gera questões de múltipla escolha de um tema com base nos materiais. Body: `{ "texto": "Potencial de ação" }`. Cada questão
+traz `pergunta`, `opcoes` (5 alternativas, embaralhadas pelo motor), `correta` (índice 0 a 4), `explicacao`, `subtema` e `referencias`.
+Retorna `{ "tema", "quizz_gerado_llm", "uso_tokens" }`, com as questões em `quizz_gerado_llm.questoes`.
+
+### `POST /llm` (legado)
+
+Pergunta ao tutor, com resposta fundamentada nos materiais. Body: `{ "texto": "O que é a sinapse química?" }`. Retorna
+`{ "pergunta", "resposta_tutor", "documentos_utilizados", "uso_tokens" }`.
+
+---
+
+## Testes
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
 
----
-
-## Variáveis de Ambiente
-
-| Variável | Descrição |
-|---|---|
-| `GEMINI_API_KEY` | Chave de API do Google Gemini |
-| `GEMINI_API_KEY_BACKUP` | Chave reserva. O `/feedback` a usa quando o Laravel pede `chave: "reserva"` (só o rótulo trafega, nunca a chave) |
-| `GEMINI_MODEL`, `GEMINI_MODEL_FALLBACK` | Modelos aceitos no `modelo` do pedido ao `/feedback` (além do padrão do motor) |
-| `NOMIC_API_KEY` | Chave de API do Nomic para geração de embeddings |
-| `MONGO_ADDRESS` | Connection string do MongoDB Atlas |
-| `MONGO_DB` | Nome do banco de dados |
-| `MONGO_COLLECTION` | Nome da coleção onde os chunks/vetores são armazenados |
+Os testes não usam rede: o Gemini e o Atlas são substituídos por dublês.
