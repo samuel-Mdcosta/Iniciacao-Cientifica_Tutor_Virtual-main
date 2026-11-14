@@ -301,3 +301,104 @@ def test_feedback_valida_payload(cliente):
     for payload in (nivel_invalido, areas_demais, sem_desempenho):
         assert client.post("/feedback", json=payload).status_code == 422
     assert models.chamadas == []
+
+
+# ---------- feedback controlado pelo sistema (chave, modelo e material de apoio prontos) ----------
+
+CONTEXTO_PRONTO = "### Área: Hipocampo e Sistema Límbico\n[Fonte: Neurociências]\nO circuito de Papez integra emoção e memória."
+
+
+def payload_com_contexto(**extra):
+    corpo = payload_padrao()
+    corpo.update(
+        contexto=CONTEXTO_PRONTO,
+        fontes_por_tema={HIPOCAMPO: ["Neurociências"]},
+        citacoes={"Neurociências": "Neurociências — Bear (4ª ed., Artmed, 2017)"},
+    )
+    corpo.update(extra)
+    return corpo
+
+
+def resposta_com_fonte(titulo):
+    return json.dumps({**RESPOSTA_LLM, "areas_prioritarias": [
+        {**RESPOSTA_LLM["areas_prioritarias"][0], "tema": HIPOCAMPO, "onde_estudar": [titulo]}]})
+
+
+def test_feedback_com_contexto_pronto_nao_consulta_o_atlas(cliente):
+    http, models, recuperacao = cliente(texto_llm=resposta_com_fonte("Neurociências"))
+
+    resposta = http.post("/feedback", json=payload_com_contexto())
+
+    assert resposta.status_code == 200
+    assert recuperacao.consultas == []
+    assert "circuito de Papez integra emoção" in models.chamadas[0]["config"].system_instruction
+    area = resposta.json()["feedback"]["areas_prioritarias"][0]
+    assert area["onde_estudar"] == ["Neurociências — Bear (4ª ed., Artmed, 2017)"]
+
+
+def test_feedback_nao_manda_campos_de_controle_ao_modelo(cliente):
+    http, models, _ = cliente(texto_llm=resposta_com_fonte("Neurociências"))
+
+    http.post("/feedback", json=payload_com_contexto(chave="principal", modelo="gemini-flash-lite-latest"))
+
+    enviado = models.chamadas[0]["contents"][0].parts[0].text
+    for campo in ("contexto", "citacoes", "fontes_por_tema", '"chave"', '"modelo"'):
+        assert campo not in enviado
+
+
+def test_feedback_usa_o_modelo_pedido(cliente, monkeypatch):
+    monkeypatch.setenv("GEMINI_MODEL_FALLBACK", "modelo-reserva")
+    http, models, _ = cliente(texto_llm=resposta_com_fonte("Neurociências"))
+
+    resposta = http.post("/feedback", json=payload_com_contexto(modelo="modelo-reserva"))
+
+    assert resposta.status_code == 200
+    assert models.chamadas[0]["model"] == "modelo-reserva"
+
+
+def test_feedback_recusa_modelo_fora_da_lista(cliente):
+    http, models, _ = cliente(texto_llm=resposta_com_fonte("Neurociências"))
+
+    resposta = http.post("/feedback", json=payload_com_contexto(modelo="modelo-qualquer"))
+
+    assert resposta.status_code == 422
+    assert models.chamadas == []
+
+
+def test_feedback_chave_reserva_usa_outro_cliente(cliente, monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY_BACKUP", "chave-reserva-de-teste")
+    http, principal, _ = cliente(texto_llm=resposta_com_fonte("Neurociências"))
+    reserva = ModelsFalso(resposta_com_fonte("Neurociências"))
+    monkeypatch.setattr(main, "cliente_gemini",
+                        lambda rotulo: SimpleNamespace(models=reserva) if rotulo == "reserva" else main.sistema_tutor.client)
+
+    resposta = http.post("/feedback", json=payload_com_contexto(chave="reserva"))
+
+    assert resposta.status_code == 200
+    assert len(reserva.chamadas) == 1 and principal.chamadas == []
+
+
+def test_feedback_chave_reserva_sem_configuracao(cliente, monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY_BACKUP", raising=False)
+    http, models, _ = cliente(texto_llm=resposta_com_fonte("Neurociências"))
+
+    resposta = http.post("/feedback", json=payload_com_contexto(chave="reserva"))
+
+    assert resposta.status_code == 422
+    assert models.chamadas == []
+
+
+def test_feedback_rotulo_de_chave_invalido(cliente):
+    http, _, _ = cliente(texto_llm=resposta_com_fonte("Neurociências"))
+
+    assert http.post("/feedback", json=payload_com_contexto(chave="outra")).status_code == 422
+
+
+def test_feedback_erro_do_gemini_informa_o_status(cliente):
+    erro = genai_errors.APIError(429, {"error": {"message": "cota", "status": "RESOURCE_EXHAUSTED"}})
+    http, _, _ = cliente(erro_llm=erro)
+
+    resposta = http.post("/feedback", json=payload_com_contexto())
+
+    assert resposta.status_code == 502
+    assert resposta.json()["status_gemini"] == 429

@@ -266,6 +266,8 @@ pytest
 | Variável | Descrição |
 |---|---|
 | `GEMINI_API_KEY` | Chave de API do Google Gemini |
+| `GEMINI_API_KEY_BACKUP` | Chave reserva. O `/feedback` a usa quando o Laravel pede `chave: "reserva"` (só o rótulo trafega, nunca a chave) |
+| `GEMINI_MODEL`, `GEMINI_MODEL_FALLBACK` | Modelos aceitos no `modelo` do pedido ao `/feedback` (além do padrão do motor) |
 | `NOMIC_API_KEY` | Chave de API do Nomic para geração de embeddings |
 | `MONGO_ADDRESS` | Connection string do MongoDB Atlas |
 | `MONGO_DB` | Nome do banco de dados |

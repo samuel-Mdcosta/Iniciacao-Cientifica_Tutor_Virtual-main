@@ -2,7 +2,7 @@ from google import genai
 from google.genai import types
 from google.genai import errors as genai_errors
 from pydantic import BaseModel, Field, StringConstraints
-from typing import Annotated, List, Literal, Optional
+from typing import Annotated, Dict, List, Literal, Optional
 from App.Backend.config.instructions import Instructions
 import os
 import json
@@ -146,6 +146,36 @@ class RequisicaoFeedback(BaseModel):
     desempenho_por_tema: List[DesempenhoTema] = Field(..., min_length=1, max_length=50)
     areas_prioritarias: List[AreaPrioritaria] = Field(default_factory=list, max_length=3)
     temas_nao_praticados: List[TextoCurto] = Field(default_factory=list, max_length=20)
+    # Quem controla a fila (o Laravel) escolhe a combinação chave + modelo. As chaves ficam aqui, nas variáveis
+    # de ambiente: o pedido só traz o rótulo ("principal" ou "reserva"), nunca a chave.
+    chave: Literal["principal", "reserva"] = "principal"
+    modelo: Optional[TextoCurto] = None
+    # Material de apoio já pronto (justificativas e livros das questões que o aluno errou). Quando vem,
+    # o motor não consulta o Atlas e usa estas fontes; `citacoes` troca o título do livro pela citação completa.
+    contexto: Optional[str] = Field(None, max_length=60000)
+    fontes_por_tema: Optional[Dict[str, List[str]]] = None
+    citacoes: Optional[Dict[str, str]] = None
+
+
+def modelos_permitidos():
+    """Modelos aceitos no pedido do feedback: o padrão do motor e os configurados em GEMINI_MODEL*."""
+    candidatos = [MODEL, os.getenv("GEMINI_MODEL"), os.getenv("GEMINI_MODEL_FALLBACK")]
+    return {m for m in candidatos if m}
+
+
+_clientes_reserva = {}
+
+
+def cliente_gemini(rotulo):
+    """Cliente do Gemini da chave pedida. A chave reserva vem de GEMINI_API_KEY_BACKUP; sem ela, devolve None."""
+    if rotulo != "reserva":
+        return sistema_tutor.client
+    chave = os.getenv("GEMINI_API_KEY_BACKUP")
+    if not chave:
+        return None
+    if chave not in _clientes_reserva:
+        _clientes_reserva[chave] = genai.Client(api_key=chave)
+    return _clientes_reserva[chave]
 
 
 class Menu():
@@ -251,17 +281,31 @@ async def llm_response(req: RequisicaoLlm):
 def feedback_desempenho(req: RequisicaoFeedback):
     instrucao_feedback = sistema_tutor.instructions.get_instructions("03")
 
-    consultas = {
-        area.tema: montar_consulta_area(area.tema, [q.subtema for q in area.questoes_erradas])
-        for area in req.areas_prioritarias
-    }
-    documentos_por_tema = recuperar_documentos_por_tema(consultas, sistema_tutor.recovery)
-    context_text, fontes_por_tema = montar_contexto_areas(documentos_por_tema)
+    modelo = req.modelo or MODEL
+    if modelo not in modelos_permitidos():
+        return JSONResponse(status_code=422, content={"erro": "Modelo não permitido"})
+    cliente = cliente_gemini(req.chave)
+    if cliente is None:
+        return JSONResponse(status_code=422, content={"erro": "Chave reserva não configurada"})
+
+    if req.contexto is not None:
+        # Material de apoio enviado pelo sistema: sem busca vetorial.
+        context_text = req.contexto
+        fontes_por_tema = req.fontes_por_tema or {}
+    else:
+        consultas = {
+            area.tema: montar_consulta_area(area.tema, [q.subtema for q in area.questoes_erradas])
+            for area in req.areas_prioritarias
+        }
+        documentos_por_tema = recuperar_documentos_por_tema(consultas, sistema_tutor.recovery)
+        context_text, fontes_por_tema = montar_contexto_areas(documentos_por_tema)
+
+    dados_aluno = req.model_dump(exclude={"chave", "modelo", "contexto", "fontes_por_tema", "citacoes"})
 
     try:
-        response = sistema_tutor.client.models.generate_content(
-            model=MODEL,
-            contents=conteudo_usuario(montar_dados_aluno(req.model_dump())),
+        response = cliente.models.generate_content(
+            model=modelo,
+            contents=conteudo_usuario(montar_dados_aluno(dados_aluno)),
             config=build_config(instrucao_feedback.format(
                 CONTEXT=context_text or "Nenhum trecho do material foi recuperado."
             ), max_output_tokens=MAX_TOKENS_FEEDBACK),
@@ -270,7 +314,7 @@ def feedback_desempenho(req: RequisicaoFeedback):
         logger.warning("Falha na chamada ao LLM em /feedback: %s", e)
         return JSONResponse(
             status_code=502,
-            content={"erro": "Não foi possível gerar o feedback com a IA"}
+            content={"erro": "Não foi possível gerar o feedback com a IA", "status_gemini": getattr(e, "code", None)}
         )
 
     texto_nformatado = response.text
@@ -291,6 +335,9 @@ def feedback_desempenho(req: RequisicaoFeedback):
 
     temas_prioritarios = [area.tema for area in req.areas_prioritarias]
     feedback = sanitizar_feedback(feedback_bruto, temas_prioritarios, fontes_por_tema)
+    if req.citacoes:
+        for area in feedback["areas_prioritarias"]:
+            area["onde_estudar"] = [req.citacoes.get(titulo, titulo) for titulo in area["onde_estudar"]]
 
     if not feedback["resumo_geral"] and not feedback["areas_prioritarias"]:
         logger.warning("LLM retornou feedback vazio em /feedback | raw=%.200s", texto_nformatado)
